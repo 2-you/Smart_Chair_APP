@@ -1,529 +1,246 @@
 import React, { useState, useEffect } from 'react';
-import {
-    StyleSheet,
-    Text,
-    View,
-    TouchableOpacity,
-    Switch,
-    ScrollView,
-    TextInput,
-    Alert,
-    Vibration,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
-import { LineChart } from 'react-native-chart-kit';
+import { View, FlatList, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTimer } from '../hooks/pomodoro/useTimer';
+import { useStats } from '../hooks/pomodoro/useStats';
+import { useNotifications } from '../hooks/pomodoro/useNotifications';
+import { Timer } from './Timer';
+import { Settings } from './Settings';
+import { Statistics } from './Statistics';
+import { TaskList } from './TaskList';
+import { getTimeOfDay } from '../utils/pomoUtils';
+import { COLORS, DEFAULT_WORK_TIME, DEFAULT_SHORT_BREAK, DEFAULT_LONG_BREAK } from '../constants/pomodoro';
 import tw from 'twrnc';
+import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 알림 설정
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
         shouldShowAlert: true,
         shouldPlaySound: true,
-        shouldSetBadge: true,
+        shouldSetBadge: false,
     }),
 });
 
-const DEFAULT_WORK_TIME = 25;
-const DEFAULT_SHORT_BREAK = 5;
-const DEFAULT_LONG_BREAK = 15;
-const CYCLES_BEFORE_LONG_BREAK = 4;
-
-// 배경 색상 설정
-const getDayNightColors = (progress) => {
-    // progress는 0(시작)에서 1(종료) 사이의 값
-    const colors = {
-        morning: ['#87CEEB', '#FFF4E3'], // 아침 하늘색에서 밝은 노란색
-        noon: ['#4A90E2', '#87CEEB'],    // 낮 파란색
-        evening: ['#FF9666', '#4A90E2'],  // 저녁 노을
-        night: ['#1A2B3C', '#2C3E50']    // 밤하늘
-    };
-
-    if (progress < 0.25) return colors.morning;
-    if (progress < 0.5) return colors.noon;
-    if (progress < 0.75) return colors.evening;
-    return colors.night;
-};
-
 const Pomodoro = () => {
-    // 타이머 상태
-    const [minutes, setMinutes] = useState(DEFAULT_WORK_TIME);
-    const [seconds, setSeconds] = useState(0);
-    const [isActive, setIsActive] = useState(false);
-    const [isWork, setIsWork] = useState(true);
-    const [cycles, setCycles] = useState(0);
+    // 기본 상태 관리
+    const [settings, setSettings] = useState({
+        workTime: DEFAULT_WORK_TIME,
+        shortBreakTime: DEFAULT_SHORT_BREAK,
+        longBreakTime: DEFAULT_LONG_BREAK,
+        focusModeEnabled: false
+    });
 
-    // 설정
-    const [workTime, setWorkTime] = useState(DEFAULT_WORK_TIME);
-    const [shortBreakTime, setShortBreakTime] = useState(DEFAULT_SHORT_BREAK);
-    const [longBreakTime, setLongBreakTime] = useState(DEFAULT_LONG_BREAK);
-    const [focusModeEnabled, setFocusModeEnabled] = useState(false);
-
-    // 통계
-    const [totalFocusTime, setTotalFocusTime] = useState(0);
-    const [completedPomodoros, setCompletedPomodoros] = useState(0);
-    const [dailyStats, setDailyStats] = useState([]);
-
-    // 할 일 목록
     const [tasks, setTasks] = useState([]);
     const [currentTask, setCurrentTask] = useState(null);
 
-    // 소리 효과
-    const [sound, setSound] = useState();
+    // 커스텀 훅 사용
+    const { stats, updateStats } = useStats();
+    const { scheduleNotification } = useNotifications();
 
-    // 데이터 로드
+    const handleTimerComplete = () => {
+        if (timer.isWork) {
+            updateStats(settings.workTime);
+            scheduleNotification(true);
+
+            if (timer.cycles + 1 >= 4) {
+                timer.setMinutes(settings.longBreakTime);
+                timer.setCycles(0);
+            } else {
+                timer.setMinutes(settings.shortBreakTime);
+                timer.setCycles(timer.cycles + 1);
+            }
+        } else {
+            scheduleNotification(false);
+            timer.setMinutes(settings.workTime);
+        }
+
+        timer.setIsWork(!timer.isWork);
+    };
+
+    const timer = useTimer(settings.workTime, handleTimerComplete);
+
+    // 앱 시작시 저장된 할 일 목록 불러오기
     useEffect(() => {
-        loadData();
-        setupNotifications();
+        const loadTasks = async () => {
+            try {
+                const savedTasks = await AsyncStorage.getItem('tasks');
+                if (savedTasks) {
+                    setTasks(JSON.parse(savedTasks));
+                }
+            } catch (error) {
+                console.error('할 일 목록을 불러오는데 실패했습니다:', error);
+            }
+        };
+
+        loadTasks();
     }, []);
 
-    const loadData = async () => {
+    const addTask = async (newTask) => {
         try {
-            const savedStats = await AsyncStorage.getItem('stats');
-            if (savedStats) {
-                const stats = JSON.parse(savedStats);
-                setTotalFocusTime(stats.totalFocusTime || 0);
-                setCompletedPomodoros(stats.completedPomodoros || 0);
-                setDailyStats(stats.dailyStats || []);
-            }
-
-            const savedTasks = await AsyncStorage.getItem('tasks');
-            if (savedTasks) {
-                setTasks(JSON.parse(savedTasks));
-            }
+            const updatedTasks = [...tasks, newTask];
+            await AsyncStorage.setItem('tasks', JSON.stringify(updatedTasks));
+            setTasks(updatedTasks);
         } catch (error) {
-            console.error('Error loading data:', error);
+            console.error('할 일을 저장하는데 실패했습니다:', error);
         }
     };
 
-    // 알림 설정
-    const setupNotifications = async () => {
+    const deleteTask = async (taskId) => {
         try {
-            const { status: existingStatus } = await Notifications.getPermissionsAsync();
-            let finalStatus = existingStatus;
-
-            if (existingStatus !== 'granted') {
-                const { status } = await Notifications.requestPermissionsAsync();
-                finalStatus = status;
-            }
-
-            if (finalStatus !== 'granted') {
-                Alert.alert('알림 권한이 필요합니다.');
-                return;
+            const updatedTasks = tasks.filter(task => task.id !== taskId);
+            await AsyncStorage.setItem('tasks', JSON.stringify(updatedTasks));
+            setTasks(updatedTasks);
+            if (currentTask?.id === taskId) {
+                setCurrentTask(null);
             }
         } catch (error) {
-            console.log('알림 설정 오류:', error);
+            console.error('할 일을 삭제하는데 실패했습니다:', error);
         }
     };
 
-    // 타이머 로직
+    const updateTask = async (updatedTask) => {
+        try {
+            const updatedTasks = tasks.map(task =>
+                task.id === updatedTask.id ? updatedTask : task
+            );
+            await AsyncStorage.setItem('tasks', JSON.stringify(updatedTasks));
+            setTasks(updatedTasks);
+        } catch (error) {
+            console.error('할 일 업데이트에 실패했습니다:', error);
+        }
+    };
+
+    const handlePomodoroComplete = async () => {
+        if (currentTask) {
+            const updatedTask = {
+                ...currentTask,
+                completedPomodoros: currentTask.completedPomodoros + 1
+            };
+            await updateTask(updatedTask);
+            setCurrentTask(updatedTask);
+
+            // 목표한 뽀모도로 수를 달성했을 때 알림
+            if (updatedTask.completedPomodoros >= updatedTask.estimatedPomodoros) {
+                Alert.alert(
+                    "목표 달성! 🎉",
+                    `${updatedTask.name} 작업의 목표 뽀모도로 수를 달성했습니다!`
+                );
+            }
+        }
+
+        // 타이머 상태 업데이트
+        setIsActive(false);  // timer.setIsActive 대신
+        setMinutes(settings.workTime);  // timer.setMinutes 대신
+        setSeconds(0);  // timer.setSeconds 대신
+        setIsWork(true);  // 작업 모드로 리셋
+    };
+
+    // 시간대별 색상 관리
+    const [colors, setColors] = useState(COLORS.morning);
+
+    // 타이머 진행도에 따른 배경색 업데이트
+    const updateBackgroundColor = () => {
+        const totalSeconds = settings.workTime * 60;
+        const currentSeconds = timer.minutes * 60 + timer.seconds;
+        const progress = currentSeconds / totalSeconds;
+
+        if (progress > 0.75) {  // 25% 미만 진행
+            setColors(COLORS.morning);
+        } else if (progress > 0.5) {  // 25~50% 진행
+            setColors(COLORS.noon);
+        } else if (progress > 0.25) {  // 50~75% 진행
+            setColors(COLORS.evening);
+        } else {  // 75% 이상 진행
+            setColors(COLORS.night);
+        }
+    };
+
+    // 타이머 틱마다 배경색 업데이트
     useEffect(() => {
-        let interval = null;
-
-        if (isActive) {
-            interval = setInterval(() => {
-                if (seconds === 0) {
-                    if (minutes === 0) {
-                        clearInterval(interval);
-                        handleTimerComplete();
-                        return;
-                    }
-                    setSeconds(59);
-                    setMinutes(minutes - 1);
-                } else {
-                    setSeconds(seconds - 1);
-                }
-            }, 1000);
+        if (timer.isActive && timer.isWork) {  // 작업 시간일 때만 배경색 변경
+            updateBackgroundColor();
         }
+    }, [timer.minutes, timer.seconds]);
 
-        return () => clearInterval(interval);
-    }, [isActive, minutes, seconds]);
-
-    const handleTimerComplete = async () => {
-        try {
-            Vibration.vibrate();
-
-            // 알림 전송
-            await Notifications.scheduleNotificationAsync({
-                content: {
-                    title: isWork ? '휴식 시간!' : '작업 시작!',
-                    body: isWork ? '잠시 휴식을 취하세요.' : '다시 집중할 시간입니다.',
-                },
-                trigger: null, // 즉시 알림
-            });
-
-            // 나머지 타이머 완료 로직
-            if (isWork) {
-                const newCycles = cycles + 1;
-                setCycles(newCycles);
-                setCompletedPomodoros(prev => prev + 1);
-                setTotalFocusTime(prev => prev + workTime);
-
-                if (newCycles % CYCLES_BEFORE_LONG_BREAK === 0) {
-                    setMinutes(longBreakTime);
-                } else {
-                    setMinutes(shortBreakTime);
-                }
-                setIsWork(false);
-
-                // 현재 작업 업데이트
-                if (currentTask) {
-                    const updatedTasks = tasks.map(task =>
-                        task.id === currentTask.id
-                            ? { ...task, completedPomodoros: task.completedPomodoros + 1 }
-                            : task
-                    );
-                    setTasks(updatedTasks);
-                    await AsyncStorage.setItem('tasks', JSON.stringify(updatedTasks));
-                }
-            } else {
-                setMinutes(workTime);
-                setIsWork(true);
-            }
-
-            updateStats();
-        } catch (error) {
-            console.log('타이머 완료 처리 오류:', error);
-        }
-    };
-
-    const updateStats = async () => {
-        const today = new Date().toISOString().split('T')[0];
-        const updatedStats = [...dailyStats];
-        const todayStats = updatedStats.find(stat => stat.date === today);
-
-        if (todayStats) {
-            todayStats.completedPomodoros += 1;
-            todayStats.totalFocusTime += workTime;
-        } else {
-            updatedStats.push({
-                date: today,
-                completedPomodoros: 1,
-                totalFocusTime: workTime,
-            });
-        }
-
-        setDailyStats(updatedStats);
-        await AsyncStorage.setItem('stats', JSON.stringify({
-            totalFocusTime,
-            completedPomodoros,
-            dailyStats: updatedStats,
-        }));
-    };
-
-    // 타이머 컨트롤
-    const toggleTimer = () => {
-        setIsActive(!isActive);
-    };
-
-    const resetTimer = () => {
-        setIsActive(false);
-        setMinutes(workTime);
-        setSeconds(0);
-        setIsWork(true);
-        setCycles(0);
-    };
-
-    // 할 일 관리
-    const addTask = async (taskName) => {
-        const newTask = {
-            id: Date.now().toString(),
-            name: taskName,
-            completedPomodoros: 0,
-            estimatedPomodoros: 4,
-        };
-        const updatedTasks = [...tasks, newTask];
-        setTasks(updatedTasks);
-        await AsyncStorage.setItem('tasks', JSON.stringify(updatedTasks));
-    };
-
-    const selectTask = (task) => {
-        setCurrentTask(task);
-        resetTimer();
-    };
-
-    // 타이머 진행률 업데이트
-    const [timerProgress, setTimerProgress] = useState(0);
-
+    // 타이머 리셋될 때 초기 배경색으로 변경
     useEffect(() => {
-        if (isActive && isWork) {
-            const totalSeconds = workTime * 60;
-            const currentSeconds = (workTime * 60) - (minutes * 60 + seconds);
-            const progress = currentSeconds / totalSeconds;
-            setTimerProgress(progress);
+        if (!timer.isActive) {
+            setColors(COLORS.morning);
         }
-    }, [minutes, seconds, isActive, isWork]);
+    }, [timer.isActive]);
 
-    // UI 렌더링
+    // 설정 변경시 타이머 업데이트
+    useEffect(() => {
+        if (!timer.isActive) {
+            timer.setMinutes(timer.isWork ? settings.workTime : settings.shortBreakTime);
+        }
+    }, [settings]);
+
+    // 렌더링할 섹션들을 배열로 정의
+    const sections = [
+        {
+            key: 'timer', component: (
+                <Timer
+                    {...timer}
+                    currentTask={currentTask}
+                    onToggle={() => timer.setIsActive(!timer.isActive)}
+                    onReset={() => {
+                        timer.setIsActive(false);
+                        timer.setMinutes(settings.workTime);
+                        timer.setSeconds(0);
+                    }}
+                    onComplete={handlePomodoroComplete}
+                />
+            )
+        },
+        {
+            key: 'settings', component: (
+                <Settings
+                    settings={settings}
+                    onSettingsChange={setSettings}
+                />
+            )
+        },
+        {
+            key: 'statistics', component: (
+                <Statistics stats={stats} />
+            )
+        },
+        {
+            key: 'taskList', component: (
+                <TaskList
+                    tasks={tasks}
+                    currentTask={currentTask}
+                    onTaskSelect={setCurrentTask}
+                    onTaskAdd={addTask}
+                    onTaskDelete={deleteTask}
+                    onTaskUpdate={updateTask}
+                />
+            )
+        }
+    ];
+
+    const renderItem = ({ item }) => item.component;
+
     return (
         <View style={tw`flex-1`}>
             <LinearGradient
-                colors={getDayNightColors(timerProgress)}
+                colors={colors}
                 style={tw`absolute inset-0`}
             />
-            <ScrollView style={tw`flex-1 px-5 py-4`}>
-                <View style={tw`bg-white/80 rounded-xl p-6 mb-6 shadow-lg`}>
-                    <Text style={styles.statusText}>
-                        {isWork ? '작업 시간' : '휴식 시간'}
-                    </Text>
-                    <Text style={styles.timerText}>
-                        {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
-                    </Text>
-                    <Text style={styles.cycleText}>완료한 사이클: {cycles}</Text>
-
-                    {currentTask && (
-                        <Text style={styles.currentTaskText}>
-                            현재 작업: {currentTask.name}
-                        </Text>
-                    )}
-                </View>
-
-                <View style={tw`bg-white/80 rounded-xl p-6 mb-6`}>
-                    <View style={styles.buttonContainer}>
-                        <TouchableOpacity
-                            style={[styles.button, isActive ? styles.stopButton : styles.startButton]}
-                            onPress={toggleTimer}
-                        >
-                            <Text style={styles.buttonText}>
-                                {isActive ? '일시정지' : '시작'}
-                            </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.button, styles.resetButton]}
-                            onPress={resetTimer}
-                        >
-                            <Text style={styles.buttonText}>리셋</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                <View style={tw`bg-white/80 rounded-xl p-6 mb-6`}>
-                    <View style={styles.settingsSection}>
-                        <Text style={styles.sectionTitle}>설정</Text>
-                        <View style={styles.settingItem}>
-                            <Text>작업 시간 (분)</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={String(workTime)}
-                                onChangeText={(text) => setWorkTime(parseInt(text) || DEFAULT_WORK_TIME)}
-                                keyboardType="numeric"
-                            />
-                        </View>
-                        <View style={styles.settingItem}>
-                            <Text>짧은 휴식 (분)</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={String(shortBreakTime)}
-                                onChangeText={(text) => setShortBreakTime(parseInt(text) || DEFAULT_SHORT_BREAK)}
-                                keyboardType="numeric"
-                            />
-                        </View>
-                        <View style={styles.settingItem}>
-                            <Text>긴 휴식 (분)</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={String(longBreakTime)}
-                                onChangeText={(text) => setLongBreakTime(parseInt(text) || DEFAULT_LONG_BREAK)}
-                                keyboardType="numeric"
-                            />
-                        </View>
-                        <View style={styles.settingItem}>
-                            <Text>포커스 모드</Text>
-                            <Switch
-                                value={focusModeEnabled}
-                                onValueChange={setFocusModeEnabled}
-                            />
-                        </View>
-                    </View>
-                </View>
-
-                <View style={tw`bg-white/80 rounded-xl p-6 mb-6`}>
-                    <View style={styles.statsSection}>
-                        <Text style={styles.sectionTitle}>통계</Text>
-                        <Text>총 집중 시간: {Math.floor(totalFocusTime / 60)}시간 {totalFocusTime % 60}분</Text>
-                        <Text>완료한 뽀모도로: {completedPomodoros}개</Text>
-
-                        {dailyStats.length > 0 && (
-                            <LineChart
-                                data={{
-                                    labels: dailyStats.slice(-7).map(stat => stat.date.slice(5)),
-                                    datasets: [{
-                                        data: dailyStats.slice(-7).map(stat => stat.completedPomodoros)
-                                    }]
-                                }}
-                                width={300}
-                                height={200}
-                                chartConfig={{
-                                    backgroundColor: '#ffffff',
-                                    backgroundGradientFrom: '#ffffff',
-                                    backgroundGradientTo: '#ffffff',
-                                    color: (opacity = 1) => `rgba(0, 123, 255, ${opacity})`,
-                                }}
-                                style={styles.chart}
-                            />
-                        )}
-                    </View>
-                </View>
-
-                <View style={tw`bg-white/80 rounded-xl p-6 mb-6`}>
-                    <View style={styles.tasksSection}>
-                        <Text style={styles.sectionTitle}>할 일 목록</Text>
-                        <TextInput
-                            style={styles.taskInput}
-                            placeholder="새로운 할 일 추가"
-                            onSubmitEditing={(e) => addTask(e.nativeEvent.text)}
-                        />
-                        {tasks.map(task => (
-                            <TouchableOpacity
-                                key={task.id}
-                                style={[
-                                    styles.taskItem,
-                                    currentTask?.id === task.id && styles.selectedTask
-                                ]}
-                                onPress={() => selectTask(task)}
-                            >
-                                <Text>{task.name}</Text>
-                                <Text>완료: {task.completedPomodoros}/{task.estimatedPomodoros}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                </View>
-            </ScrollView>
+            <FlatList
+                data={sections}
+                renderItem={renderItem}
+                keyExtractor={item => item.key}
+                scrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+                style={tw`flex-1`}
+                contentContainerStyle={tw`p-4`}
+            />
         </View>
     );
 };
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 20,
-    },
-    timerCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.8)',
-        padding: 30,
-        borderRadius: 15,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-        marginBottom: 30,
-    },
-    statusText: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#333',
-        marginBottom: 10,
-    },
-    timerText: {
-        fontSize: 48,
-        fontWeight: 'bold',
-        color: '#007bff',
-        marginBottom: 10,
-    },
-    cycleText: {
-        fontSize: 16,
-        color: '#666',
-    },
-    currentTaskText: {
-        fontSize: 18,
-        color: '#333',
-        marginTop: 10,
-    },
-    buttonContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        width: '100%',
-        marginBottom: 30,
-    },
-    button: {
-        paddingVertical: 15,
-        paddingHorizontal: 30,
-        borderRadius: 10,
-        marginHorizontal: 10,
-        minWidth: 120,
-        alignItems: 'center',
-    },
-    startButton: {
-        backgroundColor: '#28a745',
-    },
-    stopButton: {
-        backgroundColor: '#dc3545',
-    },
-    resetButton: {
-        backgroundColor: '#6c757d',
-    },
-    buttonText: {
-        color: '#ffffff',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
-    sectionTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 15,
-        color: '#333',
-    },
-    settingsSection: {
-        backgroundColor: '#ffffff',
-        padding: 20,
-        borderRadius: 15,
-        marginBottom: 30,
-    },
-    settingItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 15,
-    },
-    input: {
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 5,
-        padding: 8,
-        width: 80,
-        textAlign: 'center',
-    },
-    statsSection: {
-        backgroundColor: '#ffffff',
-        padding: 20,
-        borderRadius: 15,
-        marginBottom: 30,
-    },
-    chart: {
-        marginVertical: 15,
-        borderRadius: 15,
-    },
-    tasksSection: {
-        backgroundColor: '#ffffff',
-        padding: 20,
-        borderRadius: 15,
-        marginBottom: 30,
-    },
-    taskInput: {
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 5,
-        padding: 12,
-        marginBottom: 15,
-    },
-    taskItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 15,
-        backgroundColor: '#f8f9fa',
-        borderRadius: 10,
-        marginBottom: 10,
-    },
-    selectedTask: {
-        backgroundColor: '#e3f2fd',
-        borderWidth: 1,
-        borderColor: '#007bff',
-    },
-});
 
 export default Pomodoro;
