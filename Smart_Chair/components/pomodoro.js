@@ -8,7 +8,6 @@ import { Timer } from './Timer';
 import { Settings } from './Settings';
 import { Statistics } from './Statistics';
 import { TaskList } from './TaskList';
-import { getTimeOfDay } from '../utils/pomoUtils';
 import { COLORS, DEFAULT_WORK_TIME, DEFAULT_SHORT_BREAK, DEFAULT_LONG_BREAK } from '../constants/pomodoro';
 import tw from 'twrnc';
 import * as Notifications from 'expo-notifications';
@@ -82,6 +81,9 @@ const Pomodoro = () => {
             const updatedTasks = [...tasks, newTask];
             await AsyncStorage.setItem('tasks', JSON.stringify(updatedTasks));
             setTasks(updatedTasks);
+            if (!currentTask) {
+                setCurrentTask(newTask);
+            }
         } catch (error) {
             console.error('할 일을 저장하는데 실패했습니다:', error);
         }
@@ -131,10 +133,10 @@ const Pomodoro = () => {
         }
 
         // 타이머 상태 업데이트
-        setIsActive(false);  // timer.setIsActive 대신
-        setMinutes(settings.workTime);  // timer.setMinutes 대신
-        setSeconds(0);  // timer.setSeconds 대신
-        setIsWork(true);  // 작업 모드로 리셋
+        setIsActive(false);
+        setMinutes(settings.workTime);
+        setSeconds(0);
+        setIsWork(true);
     };
 
     // 시간대별 색상 관리
@@ -177,6 +179,11 @@ const Pomodoro = () => {
             timer.setMinutes(timer.isWork ? settings.workTime : settings.shortBreakTime);
         }
     }, [settings]);
+
+    // useEffect를 사용하여 타이머 상태 관리
+    useEffect(() => {
+        // 타이머 관련 상태를 여기서 초기화하거나 업데이트
+    }, [currentTask]); // currentTask가 변경될 때만 실행
 
     // 렌더링할 섹션들을 배열로 정의
     const sections = [

@@ -1,14 +1,14 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native';
 import { useState, useEffect } from 'react';
 import tw from 'twrnc';
 import Pomodoro from './components/pomodoro';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const Stack = createStackNavigator();
 
-// HomeScreen 컴포넌트
 const HomeScreen = ({ navigation }) => {
   const [user, setUser] = useState({ name: '', height: '', weight: '' });
 
@@ -26,12 +26,25 @@ const HomeScreen = ({ navigation }) => {
   }, []);
 
   return (
-    <View style={styles.container}>
-      <UserData user={user} />
-      <PostureCorrectionButton navigation={navigation} />
-      <PomodoroButton navigation={navigation} />
-      <StatusBar style="auto" />
-    </View>
+    <LinearGradient
+      colors={['#ffffff', '#e1f5fe', '#81d4fa']}
+      style={styles.gradientContainer}
+    >
+      <View style={styles.overlay}>
+        <View style={styles.container}>
+          <View style={styles.titleContainer}>
+            <Text style={[tw`text-6xl font-bold mb-2`, styles.title]}>
+              Smart Chair
+            </Text>
+          </View>
+
+          <UserData user={user} />
+          <PostureCorrectionButton navigation={navigation} />
+          <PomodoroButton navigation={navigation} />
+          <StatusBar style="dark" />
+        </View>
+      </View>
+    </LinearGradient>
   );
 };
 
@@ -61,7 +74,6 @@ const PomodoroButton = ({ navigation }) => (
   </TouchableOpacity>
 );
 
-// 메인 App 컴포넌트
 export default function App() {
   return (
     <NavigationContainer>
@@ -93,41 +105,67 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  gradientContainer: {
+    flex: 1,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
   container: {
     flex: 1,
-    backgroundColor: '#f0f4f7',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
-  userData: {
-    marginBottom: 100,
+  titleContainer: {
     alignItems: 'center',
+    marginBottom: 40,
+    marginTop: -40,
   },
-  userDataText: {
-    color: '#333',
+  title: {
+    color: '#2196f3',
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+    fontFamily: Platform.OS === 'ios' ? 'AppleSDGothicNeo-Bold' : 'sans-serif-medium',
+    letterSpacing: 2,
   },
-  notificationIcon: {
-    position: 'absolute',
-    top: 40,
-    right: 20,
-  },
-  card: {
-    backgroundColor: '#ffffff',
+  userData: {
+    marginBottom: 40,
     padding: 20,
-    marginVertical: 10,
-    borderRadius: 10,
-    width: '80%',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 15,
+    width: '100%',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
     elevation: 5,
+  },
+  userDataText: {
+    color: '#333',
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 20,
+    marginVertical: 10,
+    borderRadius: 15,
+    width: '100%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3.84,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
   },
   cardText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#007bff',
+    color: '#2196f3',
   },
 });
