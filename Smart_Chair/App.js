@@ -4,8 +4,9 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TouchableOpacity, Platform } from 'react-native';
 import { useState, useEffect } from 'react';
 import tw from 'twrnc';
-import Pomodoro from './components/pomodoro';
 import { LinearGradient } from 'expo-linear-gradient';
+import Pomodoro from './components/pomodoro/pomodoro';
+import PostureCorrection from './components/posture/PostureCorrection';
 
 const Stack = createStackNavigator();
 
@@ -98,6 +99,11 @@ export default function App() {
           name="Pomodoro"
           component={Pomodoro}
           options={{ title: '뽀모도로 타이머' }}
+        />
+        <Stack.Screen
+          name="PostureCorrection"
+          component={PostureCorrection}
+          options={{ title: '자세 교정' }}
         />
       </Stack.Navigator>
     </NavigationContainer>

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { View, FlatList, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useTimer } from '../hooks/pomodoro/useTimer';
-import { useStats } from '../hooks/pomodoro/useStats';
-import { useNotifications } from '../hooks/pomodoro/useNotifications';
+import { useTimer } from '../../hooks/pomodoro/useTimer';
+import { useStats } from '../../hooks/pomodoro/useStats';
+import { useNotifications } from '../../hooks/pomodoro/useNotifications';
 import { Timer } from './Timer';
 import { Settings } from './Settings';
 import { Statistics } from './Statistics';
 import { TaskList } from './TaskList';
-import { COLORS, DEFAULT_WORK_TIME, DEFAULT_SHORT_BREAK, DEFAULT_LONG_BREAK } from '../constants/pomodoro';
+import { COLORS, DEFAULT_WORK_TIME, DEFAULT_SHORT_BREAK, DEFAULT_LONG_BREAK } from '../../constants/pomodoro';
 import tw from 'twrnc';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -188,21 +188,6 @@ const Pomodoro = () => {
     // 렌더링할 섹션들을 배열로 정의
     const sections = [
         {
-            key: 'timer', component: (
-                <Timer
-                    {...timer}
-                    currentTask={currentTask}
-                    onToggle={() => timer.setIsActive(!timer.isActive)}
-                    onReset={() => {
-                        timer.setIsActive(false);
-                        timer.setMinutes(settings.workTime);
-                        timer.setSeconds(0);
-                    }}
-                    onComplete={handlePomodoroComplete}
-                />
-            )
-        },
-        {
             key: 'settings', component: (
                 <Settings
                     settings={settings}
@@ -245,6 +230,25 @@ const Pomodoro = () => {
                 showsVerticalScrollIndicator={true}
                 style={tw`flex-1`}
                 contentContainerStyle={tw`p-4`}
+                ListHeaderComponent={() => (
+                    <View style={tw`bg-white/80 rounded-xl p-6 mb-6`}>
+                        <Timer
+                            minutes={timer.minutes}
+                            seconds={timer.seconds}
+                            isWork={timer.isWork}
+                            cycles={timer.cycles}
+                            currentTask={currentTask}
+                            isActive={timer.isActive}
+                            onToggle={() => timer.setIsActive(!timer.isActive)}
+                            onReset={() => {
+                                timer.setIsActive(false);
+                                timer.setMinutes(settings.workTime);
+                                timer.setSeconds(0);
+                            }}
+                            onComplete={handlePomodoroComplete}
+                        />
+                    </View>
+                )}
             />
         </View>
     );
