@@ -5,6 +5,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 const PostureCorrection = () => {
     const [currentWeight, setCurrentWeight] = useState(70);
+    // 잘못된 자세 여부 판단 퍼센트
+    const [weightThreshold] = useState(0.03);
     const [isCorrectPosture, setIsCorrectPosture] = useState(true);
     const [postureData, setPostureData] = useState([
         { date: '1일', correct: 6, incorrect: 2 },
@@ -14,10 +16,17 @@ const PostureCorrection = () => {
 
     // 실시간 자세 시뮬레이션
     useEffect(() => {
-        // 5초마다 자세 상태 변경
         const postureInterval = setInterval(() => {
+            // 시뮬레이션을 위한 무작위 체중 변화 (-5% ~ +5%)
+            const weightVariation = currentWeight * (Math.random() * 0.1 - 0.05);
+            const measuredWeight = currentWeight + weightVariation;
+
+            // 체중이 ±3% 범위를 벗어나는지 확인
+            const isWeightInRange = Math.abs(measuredWeight - currentWeight) / currentWeight <= weightThreshold;
+
             setIsCorrectPosture(prev => {
-                const newState = Math.random() > 0.3; // 70% 확률로 올바른 자세
+                const randomPosture = Math.random() > 0.3;
+                const newState = isWeightInRange && randomPosture;
 
                 // 현재 날짜의 데이터 업데이트
                 setPostureData(prevData => {
@@ -40,12 +49,12 @@ const PostureCorrection = () => {
 
                 return newState;
             });
-        }, 5000); // 5초마다 실행
+        }, 5000);
 
         return () => {
             clearInterval(postureInterval);
         };
-    }, []);
+    }, [currentWeight, weightThreshold]);
 
     // 차트 데이터 구성
     const chartData = {
