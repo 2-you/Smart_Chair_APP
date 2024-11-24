@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { useState, useEffect } from 'react';
 import tw from 'twrnc';
-import Pomodoro from './component/pomodoro';
+import Pomodoro from './components/pomodoro';
 
 const Stack = createStackNavigator();
 
