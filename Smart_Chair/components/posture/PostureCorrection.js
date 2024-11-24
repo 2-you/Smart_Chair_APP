@@ -4,31 +4,77 @@ import { LineChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const PostureCorrection = () => {
-    const [currentWeight, setCurrentWeight] = useState(70); // 기본값
-    const [weightHistory, setWeightHistory] = useState([]);
+    const [currentWeight, setCurrentWeight] = useState(70);
     const [isCorrectPosture, setIsCorrectPosture] = useState(true);
+    const [postureData, setPostureData] = useState([
+        { date: '1일', correct: 6, incorrect: 2 },
+        { date: '2일', correct: 5, incorrect: 3 },
+        { date: '3일', correct: 0, incorrect: 0 }
+    ]);
 
-    // 올바른 자세 범위 계산
-    const minWeight = currentWeight * 0.97; // -3%
-    const maxWeight = currentWeight * 1.03; // +3%
-
+    // 실시간 자세 시뮬레이션
     useEffect(() => {
-        // 무게 데이터 시뮬레이션 (실제로는 센서에서 데이터를 받아와야 함)
-        const mockWeightData = [
-            { date: '6/1', weight: 69 },
-            { date: '6/2', weight: 71 },
-            { date: '6/3', weight: 72 },
-        ];
-        setWeightHistory(mockWeightData);
+        // 5초마다 자세 상태 변경
+        const postureInterval = setInterval(() => {
+            setIsCorrectPosture(prev => {
+                const newState = Math.random() > 0.3; // 70% 확률로 올바른 자세
 
-        // 실시간 무게 감지 시뮬레이션
-        const interval = setInterval(() => {
-            const simulatedWeight = currentWeight + (Math.random() * 6 - 3);
-            setIsCorrectPosture(simulatedWeight >= minWeight && simulatedWeight <= maxWeight);
-        }, 1000);
+                // 현재 날짜의 데이터 업데이트
+                setPostureData(prevData => {
+                    const newData = [...prevData];
+                    const today = newData[2]; // 마지막 인덱스가 오늘
 
-        return () => clearInterval(interval);
+                    // 10초당 1시간으로 계산 (시뮬레이션 용)
+                    if (newState) {
+                        today.correct += 0.1;
+                    } else {
+                        today.incorrect += 0.1;
+                    }
+
+                    // 소수점 한 자리까지만 표시
+                    today.correct = parseFloat(today.correct.toFixed(1));
+                    today.incorrect = parseFloat(today.incorrect.toFixed(1));
+
+                    return newData;
+                });
+
+                return newState;
+            });
+        }, 5000); // 5초마다 실행
+
+        return () => {
+            clearInterval(postureInterval);
+        };
     }, []);
+
+    // 차트 데이터 구성
+    const chartData = {
+        labels: postureData.map(data => data.date),
+        datasets: [
+            {
+                data: postureData.map(data => data.correct),
+                color: (opacity = 1) => `rgba(76, 175, 80, ${opacity})`, // 초록색
+                strokeWidth: 2
+            },
+            {
+                data: postureData.map(data => data.incorrect),
+                color: (opacity = 1) => `rgba(244, 67, 54, ${opacity})`, // 빨간색
+                strokeWidth: 2
+            }
+        ],
+        legend: ['올바른 자세', '잘못된 자세']
+    };
+
+    // 알림 효과
+    useEffect(() => {
+        if (!isCorrectPosture) {
+            // todo: 진동 알림
+            // Vibration.vibrate(500);
+
+            // 콘솔에 경고 메시지
+            console.log('자세가 바르지 않습니다! 자세를 교정해주세요.');
+        }
+    }, [isCorrectPosture]);
 
     return (
         <LinearGradient
@@ -45,43 +91,52 @@ const PostureCorrection = () => {
                         {isCorrectPosture ? '올바른 자세' : '잘못된 자세'}
                     </Text>
                 </View>
-            </View>
-
-            <View style={styles.weightRangeContainer}>
-                <Text style={styles.rangeText}>올바른 자세 범위:</Text>
-                <Text style={styles.rangeValues}>
-                    {minWeight.toFixed(1)}kg ~ {maxWeight.toFixed(1)}kg
-                </Text>
+                {!isCorrectPosture && (
+                    <Text style={styles.warningText}>자세가 바르지 않습니다!</Text>
+                )}
             </View>
 
             <View style={styles.chartContainer}>
-                <Text style={styles.chartTitle}>최근 3일 무게 기록</Text>
+                <Text style={styles.chartTitle}>최근 3일 자세 기록</Text>
+                <Text style={styles.chartSubtitle}>(단위: 시간)</Text>
                 <LineChart
-                    data={{
-                        labels: weightHistory.map(data => data.date),
-                        datasets: [{
-                            data: weightHistory.map(data => Number(data.weight) || 0)
-                        }]
-                    }}
+                    data={chartData}
                     width={Dimensions.get('window').width - 40}
                     height={220}
-                    yAxisSuffix="kg"
+                    yAxisSuffix="h"
                     chartConfig={{
                         backgroundColor: '#ffffff',
                         backgroundGradientFrom: '#ffffff',
                         backgroundGradientTo: '#ffffff',
                         decimalPlaces: 1,
-                        color: (opacity = 1) => `rgba(33, 150, 243, ${opacity})`,
+                        color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
                         labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
                         propsForDots: {
                             r: "6",
-                            strokeWidth: "2",
-                            stroke: "#2196f3"
-                        }
+                            strokeWidth: "2"
+                        },
+                        strokeWidth: 2,
+                        useShadowColorFromDataset: true
                     }}
                     bezier
                     style={styles.chart}
+                    legend={chartData.legend}
                 />
+            </View>
+
+            <View style={styles.summaryContainer}>
+                <View style={styles.summaryItem}>
+                    <Text style={styles.summaryLabel}>오늘의 올바른 자세</Text>
+                    <Text style={[styles.summaryValue, { color: '#4CAF50' }]}>
+                        {postureData[2].correct}시간
+                    </Text>
+                </View>
+                <View style={styles.summaryItem}>
+                    <Text style={styles.summaryLabel}>오늘의 잘못된 자세</Text>
+                    <Text style={[styles.summaryValue, { color: '#F44336' }]}>
+                        {postureData[2].incorrect}시간
+                    </Text>
+                </View>
             </View>
         </LinearGradient>
     );
@@ -112,21 +167,6 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
     },
-    weightRangeContainer: {
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        padding: 15,
-        borderRadius: 10,
-        marginBottom: 30,
-    },
-    rangeText: {
-        fontSize: 16,
-        marginBottom: 5,
-    },
-    rangeValues: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#2196f3',
-    },
     chartContainer: {
         backgroundColor: 'rgba(255, 255, 255, 0.9)',
         padding: 15,
@@ -137,9 +177,42 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginBottom: 10,
     },
+    chartSubtitle: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 10,
+        textAlign: 'center',
+    },
+    summaryContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        padding: 15,
+        borderRadius: 10,
+        marginTop: 20,
+    },
+    summaryItem: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    summaryLabel: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 5,
+    },
+    summaryValue: {
+        fontSize: 20,
+        fontWeight: 'bold',
+    },
     chart: {
         marginVertical: 8,
         borderRadius: 16,
+    },
+    warningText: {
+        color: '#F44336',
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginTop: 10,
     }
 });
 
