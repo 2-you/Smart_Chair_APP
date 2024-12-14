@@ -16,9 +16,8 @@ const HomeScreen = ({ navigation }) => {
   useEffect(() => {
     const fetchData = async () => {
       const data = {
-        name: '홍길동',
+        name: '홍태균',
         height: 175,
-        weight: 70,
       };
       setUser(data);
     };
@@ -53,7 +52,6 @@ const UserData = ({ user }) => (
   <View style={styles.userData}>
     <Text style={[tw`text-lg font-bold`, styles.userDataText]}>이름: {user.name}</Text>
     <Text style={[tw`text-lg`, styles.userDataText]}>키: {user.height}cm</Text>
-    <Text style={[tw`text-lg`, styles.userDataText]}>몸무게: {user.weight}kg</Text>
   </View>
 );
 

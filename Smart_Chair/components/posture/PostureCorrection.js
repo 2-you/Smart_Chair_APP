@@ -1,60 +1,106 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Button } from 'react-native';
 import { LineChart } from 'react-native-chart-kit';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
 
 const PostureCorrection = () => {
     const [currentWeight, setCurrentWeight] = useState(70);
-    // 잘못된 자세 여부 판단 퍼센트
+    const [initialWeight, setInitialWeight] = useState(null); // 초기 체중 저장
     const [weightThreshold] = useState(0.03);
     const [isCorrectPosture, setIsCorrectPosture] = useState(true);
     const [postureData, setPostureData] = useState([
-        { date: '1일', correct: 6, incorrect: 2 },
-        { date: '2일', correct: 5, incorrect: 3 },
+        { date: '1일', correct: 0, incorrect: 0 },
+        { date: '2일', correct: 0, incorrect: 0 },
         { date: '3일', correct: 0, incorrect: 0 }
     ]);
+    const [isMeasuring, setIsMeasuring] = useState(false); // 측정 시작 여부
+
+    const startMeasuring = () => {
+        setIsMeasuring(true); // 측정 시작
+        setInitialWeight(null); // 초기 체중 초기화
+        let weightSum = 0;
+        let weightCount = 0;
+
+        const measureInterval = setInterval(async () => {
+            try {
+                const response = await axios.get('http://192.168.214.64:5000/api/weight');
+                const weight = response.data.current_weight;
+
+                if (weight > 0) {
+                    weightSum += weight;
+                    weightCount += 1;
+                }
+            } catch (error) {
+                console.error('체중 데이터를 가져오는 중 오류 발생:', error);
+            }
+
+            if (weightCount >= 5) { // 5초 동안 측정
+                clearInterval(measureInterval);
+                const averageWeight = weightSum / weightCount; // 평균 체중 계산
+                setInitialWeight(averageWeight); // 초기 체중 설정
+                console.log('초기 체중:', averageWeight * 1.5);
+            }
+        }, 1000); // 1초마다 측정
+    };
 
     // 실시간 자세 시뮬레이션
     useEffect(() => {
-        const postureInterval = setInterval(() => {
-            // 시뮬레이션을 위한 무작위 체중 변화 (-5% ~ +5%)
-            const weightVariation = currentWeight * (Math.random() * 0.1 - 0.05);
-            const measuredWeight = currentWeight + weightVariation;
+        const fetchWeight = async () => {
+            if (initialWeight !== null) {
+                try {
+                    const response = await axios.get('http://192.168.214.64:5000/api/weight');
+                    const weight = response.data.current_weight;
 
-            // 체중이 ±3% 범위를 벗어나는지 확인
-            const isWeightInRange = Math.abs(measuredWeight - currentWeight) / currentWeight <= weightThreshold;
+                    const lowerBound = initialWeight * 0.5; // 5% 낮은 값
+                    const upperBound = initialWeight * 1.5; // 5% 높은 값
 
-            setIsCorrectPosture(prev => {
-                const randomPosture = Math.random() > 0.3;
-                const newState = isWeightInRange && randomPosture;
-
-                // 현재 날짜의 데이터 업데이트
-                setPostureData(prevData => {
-                    const newData = [...prevData];
-                    const today = newData[2]; // 마지막 인덱스가 오늘
-
-                    // 10초당 1시간으로 계산 (시뮬레이션 용)
-                    if (newState) {
-                        today.correct += 0.1;
+                    if (weight >= lowerBound && weight <= upperBound) {
+                        setCurrentWeight(weight);
+                        setIsCorrectPosture(true); // 초기 체중 범위 내에 있을 경우 올바른 자세로 설정
                     } else {
-                        today.incorrect += 0.1;
+                        setIsCorrectPosture(false); // 초기 체중 범위 밖일 경우 잘못된 자세로 설정
                     }
-
-                    // 소수점 한 자리까지만 표시
-                    today.correct = parseFloat(today.correct.toFixed(1));
-                    today.incorrect = parseFloat(today.incorrect.toFixed(1));
-
-                    return newData;
-                });
-
-                return newState;
-            });
-        }, 5000);
-
-        return () => {
-            clearInterval(postureInterval);
+                    console.log('현재 체중:', weight * 1.5);
+                } catch (error) {
+                    console.error('체중 데이터를 가져오는 중 오류 발생:', error);
+                    setIsCorrectPosture(false); // 오류 발생 시 잘못된 자세로 설정
+                }
+            }
         };
-    }, [currentWeight, weightThreshold]);
+
+        let postureInterval;
+        if (isMeasuring && initialWeight !== null) {
+            postureInterval = setInterval(() => {
+                fetchWeight();
+            }, 1000);
+
+            return () => {
+                clearInterval(postureInterval);
+            };
+        }
+    }, [isMeasuring, initialWeight]);
+
+    // 통계 업데이트
+    useEffect(() => {
+        if (isMeasuring) {
+            setPostureData(prevData => {
+                const newData = [...prevData];
+                const todayIndex = newData.length - 1; // 오늘의 데이터 인덱스
+                if (isCorrectPosture) {
+                    newData[todayIndex].correct += 1; // 1시간 단위로 추가
+                } else {
+                    newData[todayIndex].incorrect += 1; // 1시간 단위로 추가
+                }
+                return newData;
+            });
+        }
+    }, [isCorrectPosture, isMeasuring]);
+
+    // 통계 표시 부분 수정
+    const formatTime = (time) => {
+        return (time / 10).toFixed(1); // 10으로 나누고 소수점 1자리로 포맷
+    };
 
     // 차트 데이터 구성
     const chartData = {
@@ -73,17 +119,6 @@ const PostureCorrection = () => {
         ],
         legend: ['올바른 자세', '잘못된 자세']
     };
-
-    // 알림 효과
-    useEffect(() => {
-        if (!isCorrectPosture) {
-            // todo: 진동 알림
-            // Vibration.vibrate(500);
-
-            // 콘솔에 경고 메시지
-            console.log('자세가 바르지 않습니다! 자세를 교정해주세요.');
-        }
-    }, [isCorrectPosture]);
 
     return (
         <LinearGradient
@@ -104,6 +139,8 @@ const PostureCorrection = () => {
                     <Text style={styles.warningText}>자세가 바르지 않습니다!</Text>
                 )}
             </View>
+
+            <Button title="측정 시작" onPress={startMeasuring} />
 
             <View style={styles.chartContainer}>
                 <Text style={styles.chartTitle}>최근 3일 자세 기록</Text>
@@ -137,13 +174,13 @@ const PostureCorrection = () => {
                 <View style={styles.summaryItem}>
                     <Text style={styles.summaryLabel}>오늘의 올바른 자세</Text>
                     <Text style={[styles.summaryValue, { color: '#4CAF50' }]}>
-                        {postureData[2].correct}시간
+                        {formatTime(postureData[2].correct)}시간
                     </Text>
                 </View>
                 <View style={styles.summaryItem}>
                     <Text style={styles.summaryLabel}>오늘의 잘못된 자세</Text>
                     <Text style={[styles.summaryValue, { color: '#F44336' }]}>
-                        {postureData[2].incorrect}시간
+                        {formatTime(postureData[2].incorrect)}시간
                     </Text>
                 </View>
             </View>
